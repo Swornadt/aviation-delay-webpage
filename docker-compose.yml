@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: aviation_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aviation
+      POSTGRES_PASSWORD: aviation_dev_password
+      POSTGRES_DB: aviation_gold
+    ports:
+      - "5432:5432"
+    volumes:
+      - aviation_pgdata:/var/lib/postgresql/data
+
+volumes:
+  aviation_pgdata:
