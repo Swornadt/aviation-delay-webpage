@@ -208,4 +208,4 @@ async def synthesize_answer(question: str, rows: list[dict]) -> str:
     except Exception as exc:
         raise CopilotError(f"Couldn't reach the language model: {exc}") from exc
 
-    return (resp.choices[0].message.content or "").strip()
+    return (resp.text or "").strip()
