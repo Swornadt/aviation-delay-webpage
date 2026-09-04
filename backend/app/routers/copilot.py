@@ -1,5 +1,15 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+import asyncpg
 from pydantic import BaseModel
+
+from app.db import get_pool
+from app.services.copilot import (
+    CopilotError,
+    generate_sql,
+    validate_select,
+    run_query,
+    synthesize_answer,
+)
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
 
@@ -13,26 +23,39 @@ class ChatResponse(BaseModel):
     generated_sql: str
     raw_data: list[dict]
     answer: str
+    error: str | None = None
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, pool: asyncpg.Pool = Depends(get_pool)):
     """
-    PRD Req 3.1-3.4 - Text-to-SQL RAG copilot.
+    PRD Req 3.1-3.4 - Text-to-SQL copilot over the gold schema.
 
-    TODO (Phase 3, once schema is finalized):
-      1. Build a system prompt containing the real Postgres schema
-         (table/column names, types, FKs) - see GOLD_SCHEMA.md.
-      2. Call the LLM to generate SQL from req.prompt.
-      3. Validate the SQL is a read-only SELECT before executing
-         (run against a read-only DB role as a second safety net).
-      4. Execute against Postgres, capture raw_data.
-      5. Ask the LLM to synthesize a natural-language answer from raw_data.
-      6. On any failure, return a clear error rather than a guessed answer.
+    1. Ask the LLM to translate the question into a single read-only SELECT.
+    2. Validate it (single statement, SELECT-only, known tables only).
+    3. Execute read-only against Postgres with a row cap + statement timeout.
+    4. Ask the LLM to summarize the rows in plain language.
+
+    Any failure returns a clear message in `answer` / `error` rather than a
+    guessed result.
     """
-    return ChatResponse(
-        query=req.prompt,
-        generated_sql="-- not yet implemented",
-        raw_data=[],
-        answer="The copilot isn't wired up yet - this is a placeholder response.",
-    )
+    generated_sql = ""
+    try:
+        generated_sql = await generate_sql(req.prompt)
+        safe_sql = validate_select(generated_sql)
+        rows = await run_query(pool, safe_sql)
+        answer = await synthesize_answer(req.prompt, rows)
+        return ChatResponse(
+            query=req.prompt,
+            generated_sql=safe_sql,
+            raw_data=rows,
+            answer=answer,
+        )
+    except CopilotError as exc:
+        return ChatResponse(
+            query=req.prompt,
+            generated_sql=generated_sql,
+            raw_data=[],
+            answer=f"I couldn't answer that: {exc}",
+            error=str(exc),
+        )

@@ -27,3 +27,22 @@ export async function getFlightPaths(): Promise<{ flight_paths: FlightPath[] }> 
   if (!res.ok) throw new Error(`Failed to fetch flight paths: ${res.status}`);
   return res.json();
 }
+
+export type CopilotResponse = {
+  query: string;
+  generated_sql: string;
+  raw_data: Record<string, unknown>[];
+  answer: string;
+  error?: string | null;
+};
+
+export async function askCopilot(prompt: string): Promise<CopilotResponse> {
+  const res = await fetch(`${API_URL}/api/v1/copilot/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Copilot request failed: ${res.status}`);
+  return res.json();
+}
