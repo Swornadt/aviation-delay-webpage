@@ -8,12 +8,12 @@ class Settings(BaseSettings):
     """
 
     database_url: str
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.5-flash"
     copilot_max_rows: int = 200
     copilot_query_timeout_seconds: float = 10.0
     gold_parquet_path: str = ""
-    allowed_origins: str = "http://localhost:3000"
+    allowed_origins: str = "http://localhost:3001"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

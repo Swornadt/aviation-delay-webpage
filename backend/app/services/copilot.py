@@ -19,23 +19,24 @@ import json
 import re
 
 import asyncpg
-from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 
 from app.config import settings
 
-_client: AsyncOpenAI | None = None
+_client: genai.Client | None = None
 
 
 class CopilotError(Exception):
     """Raised at any stage of the pipeline with a user-facing message."""
 
 
-def get_client() -> AsyncOpenAI:
+def get_client() -> genai.Client:
     global _client
     if _client is None:
-        if not settings.openai_api_key:
-            raise CopilotError("OPENAI_API_KEY is not configured on the server.")
-        _client = AsyncOpenAI(api_key=settings.openai_api_key)
+        if not settings.gemini_api_key:
+            raise CopilotError("GEMINI_API_KEY is not configured on the server.")
+        _client = genai.Client(api_key=settings.gemini_api_key)
     return _client
 
 
@@ -122,18 +123,18 @@ def _strip_code_fence(text: str) -> str:
 async def generate_sql(question: str) -> str:
     client = get_client()
     try:
-        resp = await client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": SQL_SYSTEM_PROMPT},
-                {"role": "user", "content": question},
-            ],
+        resp = await client.aio.models.generate_content(
+            model=settings.gemini_model,
+            contents=question,
+            config=types.GenerateContentConfig(
+                system_instruction=SQL_SYSTEM_PROMPT,
+                temperature=0,
+            ),
         )
     except Exception as exc:  # network/auth/rate-limit errors from the SDK
         raise CopilotError(f"Couldn't reach the language model: {exc}") from exc
 
-    raw = (resp.choices[0].message.content or "").strip()
+    raw = (resp.text or "").strip()
     sql = _strip_code_fence(raw)
 
     if sql.upper().startswith("NO_QUERY"):
@@ -196,13 +197,13 @@ async def synthesize_answer(question: str, rows: list[dict]) -> str:
     payload = json.dumps(rows, default=str)[:8000]  # guard against huge result sets
 
     try:
-        resp = await client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=0.2,
-            messages=[
-                {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Question: {question}\n\nRows (JSON): {payload}"},
-            ],
+        resp = await client.aio.models.generate_content(
+            model=settings.gemini_model,
+            contents=f"Question: {question}\n\nRows (JSON): {payload}",
+            config=types.GenerateContentConfig(
+                system_instruction=ANSWER_SYSTEM_PROMPT,
+                temperature=0.2,
+            ),
         )
     except Exception as exc:
         raise CopilotError(f"Couldn't reach the language model: {exc}") from exc
